@@ -87,6 +87,8 @@ _BLOCKED_EXECUTABLES: list[str] = [
     "regsvr32",
     # Credential / secret access
     "security",  # macOS keychain: security find-generic-password
+    # Windows rmdir alias
+    "rd",
 ]
 
 # Patterns matched against the full (joined) command string.
@@ -94,10 +96,11 @@ _BLOCKED_EXECUTABLES: list[str] = [
 # executable itself isn't blocked (e.g. python -c '...').
 _BLOCKED_PATTERNS: list[re.Pattern[str]] = [
     # rm with force/recursive flags targeting root or broad paths
-    re.compile(r"\brm\s+(-[rRf]+\s+)*(/|~|\.\.|C:\\)", re.IGNORECASE),
+    # Matches: rm -rf /, rm -fr /, rm -rf -- /, etc.
+    re.compile(r"\brm\s+(?:-[rRf]+\s+)*(?:--\s+)?(?:/|~|\.\.|\bC:\\)(?:\s|$)", re.IGNORECASE),
     # del /s /q (Windows recursive delete)
-    re.compile(r"\bdel\s+.*/[sS]", re.IGNORECASE),
-    re.compile(r"\brmdir\s+/[sS]", re.IGNORECASE),
+    re.compile(r"\bdel\s+.*/[sS]\s", re.IGNORECASE),
+    re.compile(r"\brmdir\s+/[sS]\s", re.IGNORECASE),
     # dd writing to disks/partitions
     re.compile(r"\bdd\s+.*\bof=\s*/dev/", re.IGNORECASE),
     # chmod 777 / chmod -R 777
